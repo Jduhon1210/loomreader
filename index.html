@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Loom → SOP Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<style>
+  :root {
+    --brand: #714B67; --brand-2: #875A7B;
+    --ink: #1f2933; --muted: #6b7280; --line: #e5e7eb; --bg: #f7f8fa; --warn: #b45309;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: var(--bg); }
+  header { background: linear-gradient(135deg, var(--brand), var(--brand-2)); color: #fff; padding: 22px 28px; }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; opacity: .85; font-size: 13px; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 24px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  .row { display: flex; gap: 10px; }
+  input[type="text"] { flex: 1; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; font-size: 14px; }
+  input[type="text"]:focus { outline: none; border-color: var(--brand-2); }
+  button.primary { background: var(--brand); color: #fff; border: 0; border-radius: 8px; padding: 12px 18px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: #fff; color: var(--brand); border: 1px solid var(--brand); border-radius: 8px; padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .opts { margin-top: 12px; }
+  .opts textarea { width: 100%; min-height: 54px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; font-size: 13px; font-family: inherit; resize: vertical; }
+  label.small { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+
+  #status { margin-top: 16px; display: none; }
+  #status.show { display: block; }
+  .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%; background: var(--brand-2); transition: width .3s; }
+  .statusmsg { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .err { color: #b91c1c; font-size: 13px; margin-top: 8px; white-space: pre-wrap; }
+
+  #out { margin-top: 24px; display: none; }
+  #out.show { display: block; }
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; }
+  .toolbar .hint { font-size: 12px; color: var(--muted); margin-right: auto; }
+
+  /* ---- SOP document (matches the Operations SOP template) ---- */
+  .sop { background: #fff; border: 1px solid var(--line); border-radius: 4px; padding: 48px 56px; font-size: 13.5px; line-height: 1.5; }
+  .sop .doctitle { text-align: center; font-weight: 700; font-size: 15px; letter-spacing: .5px; text-transform: uppercase; border-bottom: 2px solid var(--ink); padding-bottom: 10px; margin-bottom: 20px; }
+  .sec { border-top: 1px solid var(--line); padding: 12px 0; }
+  .sec:first-of-type { border-top: 0; }
+  .sec .lbl { font-weight: 700; font-size: 13.5px; margin-bottom: 4px; }
+  .sec .val { white-space: pre-wrap; }
+  .ed { outline: none; border-radius: 3px; }
+  .ed:hover { background: #faf7f9; }
+  .ed:focus { background: #fdf2fa; box-shadow: 0 0 0 2px #f0d9ea; }
+  .dates div { margin: 2px 0; }
+  .dates b { display: inline-block; min-width: 130px; }
+  ul.bare { list-style: none; padding-left: 0; margin: 4px 0; }
+  ul.defs { padding-left: 0; list-style: none; margin: 4px 0; }
+  ul.defs li { margin: 3px 0; }
+  ul.defs b { font-weight: 700; }
+  ol.proc { margin: 6px 0 0; padding-left: 22px; }
+  ol.proc > li { margin: 0 0 14px; padding-left: 4px; }
+  ol.proc ol.sub { list-style: lower-alpha; margin: 6px 0 0; padding-left: 22px; }
+  ol.proc ol.sub > li { margin: 2px 0; }
+  .stepnote { margin: 6px 0 0; font-size: 12.5px; background: #fff7ed; border-left: 3px solid var(--warn); padding: 6px 10px; border-radius: 3px; color: #7c4a03; }
+  .shot { display: block; margin: 10px 0 2px; max-width: 100%; border: 1px solid var(--line); border-radius: 6px; }
+  .hidden-media { position: absolute; left: -9999px; top: -9999px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Loom → SOP Generator</h1>
+  <p>Paste a Loom walkthrough. Claude writes the Operations SOP — Procedure steps with screenshots. Every field stays editable.</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="row">
+      <input id="loomUrl" type="text" placeholder="https://www.loom.com/share/…" autocomplete="off" />
+      <button id="go" class="primary">Generate SOP</button>
+    </div>
+    <div class="opts">
+      <label class="small" for="ctx">Optional context for Claude (feature name, audience, anything to emphasize)</label>
+      <textarea id="ctx" placeholder="e.g. This is the new automated invoice-approval flow for the Finance team."></textarea>
+    </div>
+    <div id="status">
+      <div class="bar"><i id="barfill"></i></div>
+      <div class="statusmsg" id="statusmsg">Starting…</div>
+      <div class="err" id="errmsg"></div>
+    </div>
+  </div>
+
+  <div id="out">
+    <div class="toolbar">
+      <span class="hint">Tip: click any text to edit it before downloading.</span>
+      <button class="ghost" id="dlPdf">Download PDF</button>
+      <button class="ghost" id="dlDoc">Download Word (.doc)</button>
+    </div>
+    <div class="sop" id="sop"></div>
+  </div>
+</div>
+
+<footer>Frames are captured in your browser and sent to Claude only for this generation. Nothing is stored.</footer>
+
+<video id="vid" class="hidden-media" crossorigin="anonymous" muted playsinline preload="auto"></video>
+<canvas id="cap" class="hidden-media"></canvas>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const MAX_FRAMES = 32, FRAME_MAX_W = 1000, FRAME_QUALITY = 0.72;
+
+// ---- Editable boilerplate defaults (your recurring template values) -------
+// Change these once to fit your org; they pre-fill every SOP and stay editable on screen.
+function todayStr() {
+  const d = new Date();
+  return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear();
+}
+const DEFAULTS = {
+  docTitle: 'Standard Operating Procedure (SOP) — Operations',
+  sopNumberPrefix: 'OD0',
+  effectiveDate: todayStr(),
+  lastRevision: '',
+  nextReview: '',
+  roles: [
+    'All Users — Create and place help desk tickets via email',
+    'Dave Simpson — single point of contact for users of ERP for Atlas Carts',
+    'Jon Duhon — single point of contact for Odoo',
+  ],
+  tools: ['Computer, Laptop'],
+  compliance:
+    'Follow the information requirements in the step-by-step procedure below. NOTE: Failure to comply could slow progress on addressing the request.',
+  // Standard org definitions; Claude appends any video-specific terms after these.
+  definitions: [
+    { term: 'ERP', definition: 'Enterprise Resource Planning' },
+    { term: 'Test Environment', definition: 'Offline instance of Odoo for trying solutions and confirming system functions appropriately' },
+    { term: 'Live Environment', definition: 'aka “Production” — the official instance of ERP where all business is transacted' },
+  ],
+  revisionHistory: 'Initial Document release ' + todayStr(),
+};
+
+let lastSop = null, lastFrames = [];
+
+function setStatus(pct, msg) { $('status').classList.add('show'); $('barfill').style.width = pct + '%'; $('statusmsg').textContent = msg; }
+function setError(msg) { $('errmsg').textContent = msg; }
+function reset() { $('errmsg').textContent = ''; $('out').classList.remove('show'); setStatus(0, 'Starting…'); }
+
+async function resolveLoom(input) {
+  const r = await fetch('/api/loom?id=' + encodeURIComponent(input));
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error + (data.detail ? ' (' + data.detail + ')' : ''));
+  return data;
+}
+
+function captureFrames(mp4Url) {
+  return new Promise((resolve, reject) => {
+    const vid = $('vid'), cap = $('cap'), ctx = cap.getContext('2d');
+    vid.src = '/api/proxy?url=' + encodeURIComponent(mp4Url);
+    vid.onerror = () => reject(new Error('Could not load the video for frame capture.'));
+    vid.onloadedmetadata = async () => {
+      const dur = vid.duration;
+      if (!isFinite(dur) || dur <= 0) return reject(new Error('Video has no readable duration.'));
+      const count = Math.min(MAX_FRAMES, Math.max(6, Math.round(dur / 4)));
+      const interval = dur / (count + 1);
+      const times = [];
+      for (let i = 1; i <= count; i++) times.push(+(interval * i).toFixed(2));
+      const frames = []; let idx = 0;
+      const seekTo = (t) => new Promise((res) => {
+        const onSeeked = () => { vid.removeEventListener('seeked', onSeeked); res(); };
+        vid.addEventListener('seeked', onSeeked); vid.currentTime = t;
+      });
+      try {
+        for (const t of times) {
+          await seekTo(t);
+          const scale = Math.min(1, FRAME_MAX_W / (vid.videoWidth || FRAME_MAX_W));
+          cap.width = Math.round((vid.videoWidth || FRAME_MAX_W) * scale);
+          cap.height = Math.round((vid.videoHeight || 562) * scale);
+          ctx.drawImage(vid, 0, 0, cap.width, cap.height);
+          frames.push({ index: idx, t, dataUrl: cap.toDataURL('image/jpeg', FRAME_QUALITY) });
+          idx++;
+          setStatus(20 + Math.round((idx / times.length) * 45), `Capturing frames… ${idx}/${times.length}`);
+        }
+        resolve(frames);
+      } catch (e) { reject(e); }
+    };
+  });
+}
+
+async function generate(frames, transcript, context) {
+  const r = await fetch('/api/generate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ frames, transcript, context }),
+  });
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error + (data.detail ? '\n' + (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)) : ''));
+  return data.sop;
+}
+
+function frameSrc(i) { const f = lastFrames.find((x) => x.index === i); return f ? f.dataUrl : null; }
+function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+function ed(s) { return `<span class="ed" contenteditable="true">${esc(s)}</span>`; }      // inline editable
+function edBlock(s) { return `<div class="ed" contenteditable="true">${esc(s)}</div>`; }    // block editable
+
+function section(n, label, innerHtml) {
+  return `<div class="sec"><div class="lbl">${n}. ${esc(label)}</div><div class="val">${innerHtml}</div></div>`;
+}
+
+function renderSop(sop) {
+  const defs = [...DEFAULTS.definitions, ...((sop.definitions) || [])];
+  let h = '';
+  h += `<div class="doctitle">${ed(DEFAULTS.docTitle)}</div>`;
+
+  h += section(1, 'SOP Title', ed(sop.title || ''));
+  h += section(2, 'SOP Number', ed(DEFAULTS.sopNumberPrefix + '__'));
+  h += section(3, 'Effective Date / Revision Date',
+    `<div class="dates"><div><b>Effective Date:</b> ${ed(DEFAULTS.effectiveDate)}</div>` +
+    `<div><b>Last Revision:</b> ${ed(DEFAULTS.lastRevision || ' ')}</div>` +
+    `<div><b>Next Review Date:</b> ${ed(DEFAULTS.nextReview || ' ')}</div></div>`);
+  h += section(4, 'Purpose', edBlock(sop.purpose || ''));
+  h += section(5, 'Scope', edBlock(sop.scope || ''));
+
+  let defHtml = '<ul class="defs">';
+  defs.forEach((d) => { defHtml += `<li>${ed(d.term)} – ${ed(d.definition)}</li>`; });
+  defHtml += '</ul>';
+  h += section(6, 'Definitions & Key Terms', defHtml);
+
+  let rolesHtml = '<ul class="bare">';
+  DEFAULTS.roles.forEach((r) => { rolesHtml += `<li>${ed(r)}</li>`; });
+  rolesHtml += '</ul>';
+  h += section(7, 'Roles & Responsibilities', rolesHtml);
+
+  let toolsHtml = '<ul class="bare">';
+  DEFAULTS.tools.forEach((t) => { toolsHtml += `<li>${ed(t)}</li>`; });
+  toolsHtml += '</ul>';
+  h += section(8, 'Required Tools, Materials, & Systems', toolsHtml);
+
+  h += section(9, 'Compliance Requirements', edBlock(DEFAULTS.compliance));
+
+  // Procedure with screenshots
+  let proc = '<ol class="proc">';
+  (sop.procedure || []).forEach((s) => {
+    proc += `<li>${ed(s.text || '')}`;
+    if (Array.isArray(s.substeps) && s.substeps.length) {
+      proc += '<ol class="sub">';
+      s.substeps.forEach((ss) => (proc += `<li>${ed(ss)}</li>`));
+      proc += '</ol>';
+    }
+    if (Number.isInteger(s.screenshotFrame)) {
+      const src = frameSrc(s.screenshotFrame);
+      if (src) proc += `<img class="shot" src="${src}" alt="Step screenshot" />`;
+    }
+    if (s.note) proc += `<div class="stepnote">NOTE: ${ed(s.note)}</div>`;
+    proc += '</li>';
+  });
+  proc += '</ol>';
+  h += section(10, 'Procedure (Step-by-Step)', proc);
+
+  h += `<div class="sec"><div class="lbl">Revision History</div><div class="val">${edBlock(DEFAULTS.revisionHistory)}</div></div>`;
+
+  $('sop').innerHTML = h;
+  $('out').classList.add('show');
+}
+
+// ---- main flow ----
+$('go').addEventListener('click', async () => {
+  const input = $('loomUrl').value.trim();
+  if (!input) return;
+  reset(); $('go').disabled = true;
+  try {
+    setStatus(5, 'Resolving Loom video…');
+    const { mp4Url, transcript } = await resolveLoom(input);
+    setStatus(20, 'Loading video for frame capture…');
+    lastFrames = await captureFrames(mp4Url);
+    setStatus(70, `Claude is analyzing ${lastFrames.length} frames and writing the SOP…`);
+    lastSop = await generate(lastFrames, transcript, $('ctx').value.trim());
+    setStatus(100, 'Done.');
+    renderSop(lastSop);
+    setTimeout(() => $('status').classList.remove('show'), 800);
+  } catch (e) {
+    setError(e.message || String(e)); setStatus(0, 'Failed.');
+  } finally { $('go').disabled = false; }
+});
+
+// ---- downloads (read live DOM so inline edits are captured) ----
+function docName() { return (lastSop?.title || 'SOP').replace(/[^\w\- ]+/g, '').slice(0, 60).trim() || 'SOP'; }
+
+$('dlPdf').addEventListener('click', () => {
+  html2pdf().set({
+    margin: [12, 12, 14, 12], filename: docName() + '.pdf',
+    image: { type: 'jpeg', quality: 0.95 },
+    html2canvas: { scale: 2, useCORS: true },
+    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    pagebreak: { mode: ['css', 'avoid-all'] },
+  }).from($('sop')).save();
+});
+
+$('dlDoc').addEventListener('click', () => {
+  const html =
+    '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
+    '<head><meta charset="utf-8"><title>' + esc(docName()) + '</title>' +
+    '<style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;}' +
+    '.doctitle{text-align:center;font-weight:bold;text-transform:uppercase;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:14px;}' +
+    '.lbl{font-weight:bold;margin-top:10px;}img{max-width:600px;}ol.sub{list-style:lower-alpha;}' +
+    '.stepnote{background:#fff7ed;border-left:3px solid #b45309;padding:5px 8px;}</style></head><body>' +
+    $('sop').innerHTML + '</body></html>';
+  const blob = new Blob(['﻿', html], { type: 'application/msword' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = docName() + '.doc'; a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>
