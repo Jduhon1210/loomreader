@@ -404,14 +404,21 @@ $('dlPdf').addEventListener('click', () => {
 });
 
 $('dlDoc').addEventListener('click', () => {
+  // Word ignores CSS max-width on images and renders them at full pixel size (up to 1000px wide),
+  // which overflows the page and clips the right edge. Force an explicit display width via the
+  // width attribute (which Word honors) so screenshots fit inside the page margins.
+  const sopHtml = $('sop').innerHTML.replace(
+    /<img class="shot"/g,
+    '<img width="560" style="width:560px;height:auto;" class="shot"'
+  );
   const html =
     '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">' +
     '<head><meta charset="utf-8"><title>' + esc(docName()) + '</title>' +
     '<style>body{font-family:Calibri,Arial,sans-serif;font-size:11pt;}' +
     '.doctitle{text-align:center;font-weight:bold;text-transform:uppercase;border-bottom:2px solid #C6890B;padding-bottom:8px;margin-bottom:14px;}' +
-    '.lbl{font-weight:bold;margin-top:10px;}img{max-width:600px;}ol.sub{list-style:lower-alpha;}' +
+    '.lbl{font-weight:bold;margin-top:10px;}img.shot{width:560px;height:auto;max-width:560px;}ol.sub{list-style:lower-alpha;}' +
     '.stepnote{background:#fbf3e0;border-left:3px solid #E3A008;padding:5px 8px;}</style></head><body>' +
-    $('sop').innerHTML + '</body></html>';
+    sopHtml + '</body></html>';
   const blob = new Blob(['﻿', html], { type: 'application/msword' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = docName() + '.doc'; a.click();
