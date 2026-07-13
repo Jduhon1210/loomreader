@@ -16,7 +16,6 @@ function json(data, status = 200) {
   });
 }
 
-// Structured shape matching the Atlas Carts Operations SOP template.
 const SOP_TOOL = {
   name: 'emit_sop',
   description: 'Return the video-derived sections of the Operations SOP as structured data.',
@@ -24,28 +23,16 @@ const SOP_TOOL = {
     type: 'object',
     required: ['title', 'purpose', 'scope', 'procedure'],
     properties: {
-      title: {
-        type: 'string',
-        description: 'SOP Title — the name of the feature/function the recording demonstrates, e.g. "Confirming a Sales Order".',
-      },
-      purpose: {
-        type: 'string',
-        description: 'Section 4. One or two sentences: what this procedure accomplishes and why.',
-      },
-      scope: {
-        type: 'string',
-        description: 'Section 5. Who/what this applies to (e.g. "All Sales users creating quotations in Odoo").',
-      },
+      title: { type: 'string', description: 'SOP Title — the feature/function the recording demonstrates.' },
+      purpose: { type: 'string', description: 'Section 4. One or two sentences: what this procedure accomplishes and why.' },
+      scope: { type: 'string', description: 'Section 5. Who/what this applies to.' },
       definitions: {
         type: 'array',
-        description: 'Section 6. ONLY new/non-obvious terms that appear in this specific recording (not generic ones). May be empty.',
+        description: 'Section 6. ONLY new/non-obvious terms specific to this recording. May be empty.',
         items: {
           type: 'object',
           required: ['term', 'definition'],
-          properties: {
-            term: { type: 'string' },
-            definition: { type: 'string' },
-          },
+          properties: { term: { type: 'string' }, definition: { type: 'string' } },
         },
       },
       procedure: {
@@ -56,16 +43,9 @@ const SOP_TOOL = {
           required: ['text'],
           properties: {
             text: { type: 'string', description: 'The instruction. Name the exact app, menu, button, or field shown.' },
-            substeps: {
-              type: 'array',
-              items: { type: 'string' },
-              description: 'Optional lettered sub-points (a, b, c) for a step with multiple parts.',
-            },
+            substeps: { type: 'array', items: { type: 'string' }, description: 'Optional lettered sub-points (a, b, c).' },
             note: { type: 'string', description: 'Optional NOTE / tip / warning for this step.' },
-            screenshotFrame: {
-              type: 'integer',
-              description: 'Index of the single most illustrative provided frame for this step, or omit if none fits.',
-            },
+            screenshotFrame: { type: 'integer', description: 'Index of the most illustrative provided frame for this step, or omit.' },
           },
         },
       },
@@ -102,16 +82,10 @@ function systemPrompt(context) {
 
 export async function onRequestPost({ request, env }) {
   const apiKey = env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return json({ error: 'Server is missing ANTHROPIC_API_KEY. Add it as a Cloudflare Pages secret.' }, 500);
-  }
+  if (!apiKey) return json({ error: 'Server is missing ANTHROPIC_API_KEY. Add it as a Cloudflare Pages secret.' }, 500);
 
   let body;
-  try {
-    body = await request.json();
-  } catch {
-    return json({ error: 'Invalid JSON body' }, 400);
-  }
+  try { body = await request.json(); } catch { return json({ error: 'Invalid JSON body' }, 400); }
 
   const frames = Array.isArray(body.frames) ? body.frames : [];
   const transcript = Array.isArray(body.transcript) ? body.transcript : [];
@@ -120,18 +94,14 @@ export async function onRequestPost({ request, env }) {
   const content = [];
   content.push({
     type: 'text',
-    text:
-      `Here are ${frames.length} frames from the recording, in order. ` +
-      `Each is labeled "Frame N (mm:ss)". Use the integer N when setting screenshotFrame.`,
+    text: `Here are ${frames.length} frames from the recording, in order. Each is labeled "Frame N (mm:ss)". Use the integer N when setting screenshotFrame.`,
   });
   for (const f of frames) {
     const mm = String(Math.floor((f.t || 0) / 60)).padStart(2, '0');
     const ss = String(Math.floor((f.t || 0) % 60)).padStart(2, '0');
     content.push({ type: 'text', text: `Frame ${f.index} (${mm}:${ss}):` });
     const m = /^data:(image\/\w+);base64,(.+)$/.exec(f.dataUrl || '');
-    if (m) {
-      content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
-    }
+    if (m) content.push({ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } });
   }
   if (transcript.length) {
     const tx = transcript
@@ -156,19 +126,10 @@ export async function onRequestPost({ request, env }) {
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify(payload),
     });
-
-    if (!res.ok) {
-      const detail = await res.text();
-      return json({ error: `Claude API error ${res.status}`, detail }, 502);
-    }
-
+    if (!res.ok) { const detail = await res.text(); return json({ error: `Claude API error ${res.status}`, detail }, 502); }
     const data = await res.json();
     const toolUse = (data.content || []).find((b) => b.type === 'tool_use' && b.name === 'emit_sop');
     if (!toolUse) return json({ error: 'Model did not return a structured SOP', detail: data }, 502);
